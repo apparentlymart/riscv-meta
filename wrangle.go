@@ -55,6 +55,7 @@ type ISA struct {
 	Codecs       map[string]*Codec
 	Arguments    map[string]*Argument
 	Ops          []Operation
+	Expansions   map[string]string
 }
 
 type Extension byte
@@ -407,6 +408,27 @@ func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[s
 	return ret, sc.Err()
 }
 
+func loadExpansions(filename string) (map[string]string, error) {
+	r, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[string]string)
+
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := trimComments(sc.Text())
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		ret[fields[0]] = fields[1]
+	}
+
+	return ret, nil
+}
+
 func loadOpcodeStrings(filename string) (map[string]string, error) {
 	r, err := os.Open(filename)
 	if err != nil {
@@ -464,12 +486,17 @@ func loadISAMeta() (*ISA, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load minor opcodes: %s", err)
 	}
+	exps, err := loadExpansions("compression")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load compressed opcode expansion table: %s", err)
+	}
 
 	return &ISA{
 		MajorOpcodes: majorOpcodes,
 		Codecs:       codecs,
 		Arguments:    args,
 		Ops:          ops,
+		Expansions:   exps,
 	}, nil
 }
 
