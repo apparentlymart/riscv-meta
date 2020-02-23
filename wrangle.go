@@ -40,21 +40,21 @@ type Operation struct {
 	Standards   Standards
 }
 
+type Argument struct {
+	Name          string
+	FuncName      string
+	TypeName      string
+	FuncLocalName string
+	TypeLocalName string
+	Type          ArgType
+	Decoding      []ArgDecodeStep
+}
+
 type ISA struct {
 	MajorOpcodes map[bits8]*MajorOpcode
 	Codecs       map[string]*Codec
+	Arguments    map[string]*Argument
 	Ops          []Operation
-}
-
-type Extensions struct {
-	I bool // base integer
-	M bool // multiply and divide
-	A bool // atomic
-	S bool // supervisor
-	F bool // single-precision floating point
-	D bool // double-precision floating point
-	Q bool // quad-precision floating point
-	C bool // compressed
 }
 
 type Extension byte
@@ -184,6 +184,23 @@ func ParseStandard(s string) Standard {
 	return Standard(uint16(bits) | uint16(ext)<<8)
 }
 
+type ArgType string
+
+const (
+	ArgGeneral           ArgType = "arg"
+	ArgIntReg            ArgType = "ireg"
+	ArgFloatReg          ArgType = "freg"
+	ArgCompressedReg     ArgType = "creg"
+	ArgOffset            ArgType = "offset"
+	ArgSignedImmediate   ArgType = "simm"
+	ArgUnsignedImmediate ArgType = "uimm"
+)
+
+type ArgDecodeStep struct {
+	Mask      bits32
+	LeftShift int
+}
+
 type bits8 uint8
 type bits32 uint32
 
@@ -266,6 +283,39 @@ func loadCodecs(filename string) (map[string]*Codec, error) {
 	}
 
 	return ret, sc.Err()
+}
+
+func loadArgs(filename string) (map[string]*Argument, error) {
+	r, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[string]*Argument)
+
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := trimComments(sc.Text())
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		name := fields[0]
+
+		arg := &Argument{
+			Name:          name,
+			FuncName:      makeIdentUnderscores(name),
+			TypeName:      makeIdentTitle(name),
+			FuncLocalName: strings.ReplaceAll(makeIdentUnderscores(fields[3]), "_", ""),
+			TypeLocalName: makeIdentTitle(fields[3]),
+			Type:          ArgType(fields[2]),
+			// TODO: The decoding steps
+		}
+
+		ret[name] = arg
+	}
+
+	return ret, nil
 }
 
 func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[string]*Codec, fullNames map[string]string, descs map[string]string, pseudocode map[string]string) ([]Operation, error) {
@@ -394,6 +444,10 @@ func loadISAMeta() (*ISA, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load codecs: %s", err)
 	}
+	args, err := loadArgs("operands")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load operands: %s", err)
+	}
 	opFullNames, err := loadOpcodeStrings("opcode-fullnames")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load operation full names: %s", err)
@@ -414,6 +468,7 @@ func loadISAMeta() (*ISA, error) {
 	return &ISA{
 		MajorOpcodes: majorOpcodes,
 		Codecs:       codecs,
+		Arguments:    args,
 		Ops:          ops,
 	}, nil
 }
