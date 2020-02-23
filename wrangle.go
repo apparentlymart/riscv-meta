@@ -28,6 +28,9 @@ type Codec struct {
 }
 
 type Operation struct {
+	FullName    string
+	Description string
+	Pseudocode  string
 	Name        string
 	FuncName    string
 	TypeName    string
@@ -244,10 +247,10 @@ func loadCodecs(filename string) (map[string]*Codec, error) {
 		ret[cd.Name] = cd
 	}
 
-	return ret, nil
+	return ret, sc.Err()
 }
 
-func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[string]*Codec) ([]Operation, error) {
+func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[string]*Codec, fullNames map[string]string, descs map[string]string) ([]Operation, error) {
 	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -266,9 +269,11 @@ func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[s
 		fields = fields[1:] // skip name
 
 		op := Operation{
-			Name:     name,
-			FuncName: makeIdentUnderscores(name),
-			TypeName: makeIdentTitle(name),
+			FullName:    fullNames[name],
+			Description: descs[name],
+			Name:        name,
+			FuncName:    makeIdentUnderscores(name),
+			TypeName:    makeIdentTitle(name),
 
 			Standards: make(Standards),
 		}
@@ -321,7 +326,37 @@ func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[s
 		return ret[i].Name < ret[j].Name
 	})
 
-	return ret, nil
+	return ret, sc.Err()
+}
+
+func loadOpcodeStrings(filename string) (map[string]string, error) {
+	r, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[string]string)
+
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := trimComments(sc.Text())
+		quot := strings.IndexRune(line, '"')
+		if quot < 0 {
+			continue
+		}
+		mnem := strings.TrimSpace(line[:quot])
+		str := line[quot+1:]
+		quot = strings.IndexRune(str, '"')
+		if quot >= 0 {
+			str = str[:quot]
+		}
+
+		ret[mnem] = strings.TrimSpace(str)
+	}
+
+	spew.Dump(ret)
+
+	return ret, sc.Err()
 }
 
 func loadISAMeta() (*ISA, error) {
@@ -333,7 +368,15 @@ func loadISAMeta() (*ISA, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load codecs: %s", err)
 	}
-	ops, err := loadOperations("opcodes", majorOpcodes, codecs)
+	opFullNames, err := loadOpcodeStrings("opcode-fullnames")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load operation full names: %s", err)
+	}
+	opDescs, err := loadOpcodeStrings("opcode-descriptions")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load operation full names: %s", err)
+	}
+	ops, err := loadOperations("opcodes", majorOpcodes, codecs, opFullNames, opDescs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load minor opcodes: %s", err)
 	}
