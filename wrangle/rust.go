@@ -14,6 +14,7 @@ func generateRustFragments(dir string, isa *ISA) error {
 	}
 
 	err = generateRustRawInstruction(filepath.Join(dir, "raw_instruction.rs"), isa.Arguments)
+	err = generateRustInstruction(filepath.Join(dir, "instruction.rs"), isa)
 
 	return nil
 }
@@ -46,10 +47,7 @@ func generateRustRawInstruction(filename string, args map[string]*Argument) erro
 
 	for _, name := range argNames {
 		arg := args[name]
-		resultTy := rustTypeForArgType(arg.Type)
-		if resultTy == "u32" && arg.EncWidth == 1 {
-			resultTy = "bool"
-		}
+		resultTy := rustTypeForArgType(arg.Type, arg.EncWidth)
 		fmt.Fprintf(w, "    pub fn %s(self) -> %s {\n", arg.FuncName, resultTy)
 		if resultTy == "i32" {
 			fmt.Fprintf(w, "        let width = %d;\n", arg.EncWidth)
@@ -94,7 +92,49 @@ func generateRustRawInstruction(filename string, args map[string]*Argument) erro
 	return nil
 }
 
-func rustTypeForArgType(ty ArgType) string {
+func generateRustInstruction(filename string, isa *ISA) error {
+	w, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	for _, isaSize := range []Size{RV32, RV64, RV128} {
+		w.WriteString("\n")
+		fmt.Fprintf(w, "/// Enumeration of all operations from the RV%d ISA.\n", int(isaSize))
+		fmt.Fprintf(w, "enum OperationRV%d {\n", int(isaSize))
+
+		for _, ext := range []Extension{ExtI, ExtM, ExtA, ExtS, ExtF, ExtD, ExtQ, ExtC} {
+			extName := isa.ExtensionNames[ext]
+			fmt.Fprintf(w, "\n    // RV%d%c: %s\n\n", int(isaSize), byte(ext), extName)
+
+			std := MakeStandard(isaSize, ext)
+
+			for _, op := range isa.Ops {
+				if !op.Standards.Has(std) {
+					continue
+				}
+				fmt.Fprintf(w, "    /// %s (RV%d%c)\n", op.FullName, int(isaSize), byte(ext))
+				if len(op.Codec.Operands) == 0 {
+					fmt.Fprintf(w, "    %s;\n", op.TypeName)
+					continue
+				}
+				fmt.Fprintf(w, "    %s {\n", op.TypeName)
+				for _, argName := range op.Codec.Operands {
+					arg := isa.Arguments[argName]
+					rustType := rustTypeForArgType(arg.Type, arg.EncWidth)
+					fmt.Fprintf(w, "        %s: %s;\n", arg.FuncLocalName, rustType)
+				}
+				w.WriteString("    }\n")
+			}
+		}
+
+		w.WriteString("\n}\n")
+	}
+
+	return nil
+}
+
+func rustTypeForArgType(ty ArgType, encWidth int) string {
 	switch ty {
 	case ArgIntReg, ArgCompressedReg:
 		return "IntRegister"
@@ -103,6 +143,9 @@ func rustTypeForArgType(ty ArgType) string {
 	case ArgOffset, ArgSignedImmediate:
 		return "i32"
 	default:
+		if encWidth == 1 {
+			return "bool"
+		}
 		return "u32"
 	}
 }

@@ -112,6 +112,10 @@ func (ss Standards) String() string {
 	return buf.String()
 }
 
+func MakeStandard(s Size, e Extension) Standard {
+	return Standard(uint16(s) | uint16(e)<<8)
+}
+
 func ParseStandard(s string) Standard {
 	if !strings.HasPrefix(s, "rv") {
 		return Invalid
