@@ -38,9 +38,10 @@ type Argument struct {
 }
 
 type ISA struct {
-	MajorOpcodes map[bits8]*MajorOpcode
-	Codecs       map[string]*Codec
-	Arguments    map[string]*Argument
-	Ops          []Operation
-	Expansions   map[string]string
+	ExtensionNames map[Extension]string
+	MajorOpcodes   map[bits8]*MajorOpcode
+	Codecs         map[string]*Codec
+	Arguments      map[string]*Argument
+	Expansions     map[string]string
+	Ops            []Operation
 }

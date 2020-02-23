@@ -11,6 +11,10 @@ import (
 )
 
 func loadISAMeta() (*ISA, error) {
+	extNames, err := loadExtensionNames("extensions")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load extension names: %s", err)
+	}
 	majorOpcodes, err := loadMajorOpcodes("opcode-majors")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load major opcodes: %s", err)
@@ -45,12 +49,67 @@ func loadISAMeta() (*ISA, error) {
 	}
 
 	return &ISA{
-		MajorOpcodes: majorOpcodes,
-		Codecs:       codecs,
-		Arguments:    args,
-		Ops:          ops,
-		Expansions:   exps,
+		ExtensionNames: extNames,
+		MajorOpcodes:   majorOpcodes,
+		Codecs:         codecs,
+		Arguments:      args,
+		Ops:            ops,
+		Expansions:     exps,
 	}, nil
+}
+
+func loadExtensionNames(filename string) (map[Extension]string, error) {
+	r, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[Extension]string)
+
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := trimComments(sc.Text())
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+
+		if fields[1] != "32" {
+			// We're cheating here and using the RV32 names only because we
+			// want to use a single name for each extension letter, ignoring
+			// the separate 64-bit and 128-bit variants. (The larger variants
+			// are usually just the same text with "in addition to RV32..."
+			// appended anyway.)
+			continue
+		}
+
+		ext := Extension(strings.ToUpper(fields[2])[0])
+
+		quot := strings.IndexRune(line, '"')
+		if quot < 0 {
+			continue
+		}
+		name := line[quot+1:]
+		quot = strings.IndexRune(name, '"')
+		if quot >= 0 {
+			name = name[:quot]
+		}
+
+		// Trim off "RV32x " prefix, because we're using the 32-bit form's
+		// name for all of them.
+		name = name[6:]
+
+		// The "Standard Extension For" prefix is also redundant, so we'll
+		// trim it to make these things more compact.
+		const stdExtFor = "Standard Extension for "
+		if strings.HasPrefix(name, stdExtFor) {
+			name = name[len(stdExtFor):]
+		}
+
+		ret[ext] = strings.TrimSpace(name)
+	}
+
+	return ret, sc.Err()
 }
 
 func loadMajorOpcodes(filename string) (map[bits8]*MajorOpcode, error) {

@@ -132,3 +132,7 @@ func ParseStandard(s string) Standard {
 
 	return Standard(uint16(bits) | uint16(ext)<<8)
 }
+
+func (e Extension) String() string {
+	return string(e)
+}
