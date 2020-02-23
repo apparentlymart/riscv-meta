@@ -13,8 +13,33 @@ func generateRustFragments(dir string, isa *ISA) error {
 		return err
 	}
 
+	err = generateRustOpcode(filepath.Join(dir, "opcode.rs"), isa.MajorOpcodes)
 	err = generateRustRawInstruction(filepath.Join(dir, "raw_instruction.rs"), isa.Arguments)
 	err = generateRustInstruction(filepath.Join(dir, "instruction.rs"), isa)
+
+	return nil
+}
+
+func generateRustOpcode(filename string, ops map[bits8]*MajorOpcode) error {
+	w, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	opsList := make([]*MajorOpcode, 0, len(ops))
+	for _, op := range ops {
+		opsList = append(opsList, op)
+	}
+	sort.Slice(opsList, func(i, j int) bool {
+		return opsList[i].TypeName < opsList[j].TypeName
+	})
+
+	w.WriteString("/// Enumeration of top-level opcodes for full-length operations.\n")
+	w.WriteString("pub enum Opcode: u8 {\n")
+	for _, op := range opsList {
+		fmt.Fprintf(w, "    %s = 0b%07b;\n", op.TypeName, op.Num)
+	}
+	w.WriteString("}\n")
 
 	return nil
 }
@@ -98,7 +123,7 @@ func generateRustInstruction(filename string, isa *ISA) error {
 		return err
 	}
 
-	for _, isaSize := range []Size{RV32, RV64, RV128} {
+	for _, isaSize := range []Size{RV32, RV64} {
 		w.WriteString("\n")
 		fmt.Fprintf(w, "/// Enumeration of all operations from the RV%d ISA.\n", int(isaSize))
 		fmt.Fprintf(w, "enum OperationRV%d {\n", int(isaSize))
