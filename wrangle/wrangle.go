@@ -13,4 +13,5 @@ func main() {
 	}
 
 	spew.Dump(isa)
+	generateRustFragments("generated/rust", isa)
 }

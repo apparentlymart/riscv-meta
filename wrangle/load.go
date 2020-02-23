@@ -202,6 +202,8 @@ func loadArgs(filename string) (map[string]*Argument, error) {
 		}
 		name := fields[0]
 
+		decoding, encWidth := ParseArgDecodeSteps(fields[1])
+
 		arg := &Argument{
 			Name:          name,
 			FuncName:      makeIdentUnderscores(name),
@@ -209,7 +211,8 @@ func loadArgs(filename string) (map[string]*Argument, error) {
 			FuncLocalName: strings.ReplaceAll(makeIdentUnderscores(fields[3]), "_", ""),
 			TypeLocalName: makeIdentTitle(fields[3]),
 			Type:          ArgType(fields[2]),
-			Decoding:      ParseArgDecodeSteps(fields[1]),
+			EncWidth:      encWidth,
+			Decoding:      decoding,
 		}
 
 		ret[name] = arg

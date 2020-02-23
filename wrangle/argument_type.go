@@ -38,13 +38,14 @@ func (s ArgDecodeStep) String() string {
 	}
 }
 
-func ParseArgDecodeSteps(raw string) []ArgDecodeStep {
+func ParseArgDecodeSteps(raw string) ([]ArgDecodeStep, int) {
 	// Deals with strings like these from the "operands" file and normalizes
 	// them to just be a sequence of "mask, then shift" operations whose
 	// results can be bitewise-ORed together to produce the final value.
 
 	parts := strings.Split(raw, ",")
 	var ret []ArgDecodeStep
+	var maxDestBit int
 	for _, rawPart := range parts {
 		brack := strings.IndexByte(rawPart, '[')
 		switch {
@@ -104,8 +105,12 @@ func ParseArgDecodeSteps(raw string) []ArgDecodeStep {
 				mask := rangeMask(uint(srcTop), uint(srcBottom))
 				ret = append(ret, ArgDecodeStep{
 					Mask:       mask,
-					RightShift: int(srcBottom) - int(destTop),
+					RightShift: int(srcBottom) - int(destBottom),
 				})
+
+				if int(destTop) > maxDestBit {
+					maxDestBit = int(destTop)
+				}
 
 				// The next concat will pick up where this one left off, so
 				// we'll push srcTop along by the width of what we just decoded.
@@ -114,5 +119,5 @@ func ParseArgDecodeSteps(raw string) []ArgDecodeStep {
 
 		}
 	}
-	return ret
+	return ret, int(maxDestBit) + 1
 }

@@ -34,6 +34,7 @@ type Argument struct {
 	FuncLocalName string
 	TypeLocalName string
 	Type          ArgType
+	EncWidth      int
 	Decoding      []ArgDecodeStep
 }
 
