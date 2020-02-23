@@ -197,11 +197,6 @@ const (
 	ArgUnsignedImmediate ArgType = "uimm"
 )
 
-type ArgDecodeStep struct {
-	Mask      bits32
-	LeftShift int
-}
-
 type bits8 uint8
 type bits32 uint32
 
@@ -310,7 +305,7 @@ func loadArgs(filename string) (map[string]*Argument, error) {
 			FuncLocalName: strings.ReplaceAll(makeIdentUnderscores(fields[3]), "_", ""),
 			TypeLocalName: makeIdentTitle(fields[3]),
 			Type:          ArgType(fields[2]),
-			// TODO: The decoding steps
+			Decoding:      ParseArgDecodeSteps(fields[1]),
 		}
 
 		ret[name] = arg
@@ -583,10 +578,109 @@ func parseMatchSpec(rawSpec string) (val uint32, mask uint32) {
 	if err != nil {
 		return 0, 0
 	}
-	mask = uint32((1 << (end + 1)) - (1 << start))
+	mask = uint32(rangeMask(uint(end), uint(start)))
 
 	// We're just assuming that there won't be a "val" that is too
 	// big to fit in the identified bits here, which means we can ignore
 	// the "end" bit offset altogether.
 	return uint32(want << start), mask
+}
+
+func rangeMask(top, bottom uint) bits32 {
+	return bits32((1 << (top + 1)) - (1 << bottom))
+}
+
+type ArgDecodeStep struct {
+	Mask       bits32
+	RightShift int
+}
+
+func (s ArgDecodeStep) String() string {
+	switch {
+	case s.RightShift == 0:
+		return fmt.Sprintf("(inst & %s)", s.Mask.String())
+	case s.RightShift < 0:
+		return fmt.Sprintf("(inst & %s) << %d", s.Mask.String(), -s.RightShift)
+	default:
+		return fmt.Sprintf("(inst & %s) >> %d", s.Mask.String(), s.RightShift)
+	}
+}
+
+func ParseArgDecodeSteps(raw string) []ArgDecodeStep {
+	// Deals with strings like these from the "operands" file and normalizes
+	// them to just be a sequence of "mask, then shift" operations whose
+	// results can be bitewise-ORed together to produce the final value.
+
+	parts := strings.Split(raw, ",")
+	var ret []ArgDecodeStep
+	for _, rawPart := range parts {
+		brack := strings.IndexByte(rawPart, '[')
+		switch {
+		case brack == -1:
+			// A simple left-justified field, then.
+			rawTop, rawBottom := partition(rawPart, ":")
+			if rawBottom == "" {
+				rawBottom = rawTop
+			}
+			top, err := strconv.ParseUint(rawTop, 10, 64)
+			if err != nil {
+				continue
+			}
+			bottom, err := strconv.ParseUint(rawBottom, 10, 64)
+			if err != nil {
+				continue
+			}
+			mask := rangeMask(uint(top), uint(bottom))
+
+			ret = append(ret, ArgDecodeStep{
+				Mask:       mask,
+				RightShift: int(bottom),
+			})
+
+		default:
+			// A more complicated sequence of operations gathering values
+			// for a single field from several separate sources. In this
+			// case we might generate multiple decode steps because a
+			// consecutive sequence of bits in the input can become
+			// non-consecutive in the output.
+			rawSrc, rawDests := partition(rawPart, "[")
+			rawDests = rawDests[:len(rawDests)-1] // trim closing bracket
+
+			rawSrcTop, _ := partition(rawSrc, ":")
+			srcTop, err := strconv.ParseUint(rawSrcTop, 10, 64)
+			if err != nil {
+				continue
+			}
+
+			rawConcats := strings.Split(rawDests, "|")
+			for _, rawConcat := range rawConcats {
+				rawDestTop, rawDestBottom := partition(rawConcat, ":")
+				if rawDestBottom == "" {
+					rawDestBottom = rawDestTop
+				}
+				destTop, err := strconv.ParseUint(rawDestTop, 10, 64)
+				if err != nil {
+					continue
+				}
+				destBottom, err := strconv.ParseUint(rawDestBottom, 10, 64)
+				if err != nil {
+					continue
+				}
+				width := destTop - destBottom
+				srcBottom := srcTop - width
+
+				mask := rangeMask(uint(srcTop), uint(srcBottom))
+				ret = append(ret, ArgDecodeStep{
+					Mask:       mask,
+					RightShift: int(srcBottom) - int(destTop),
+				})
+
+				// The next concat will pick up where this one left off, so
+				// we'll push srcTop along by the width of what we just decoded.
+				srcTop -= width + 1
+			}
+
+		}
+	}
+	return ret
 }
