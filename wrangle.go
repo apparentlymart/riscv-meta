@@ -145,6 +145,24 @@ func (ss Standards) Add(s Standard) {
 	ss[s] = struct{}{}
 }
 
+func (ss Standards) String() string {
+	var ssList []Standard
+	for s := range ss {
+		ssList = append(ssList, s)
+	}
+	sort.Slice(ssList, func(i, j int) bool {
+		return ssList[i] < ssList[j]
+	})
+	var buf strings.Builder
+	for i, s := range ssList {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(s.String())
+	}
+	return buf.String()
+}
+
 func ParseStandard(s string) Standard {
 	if !strings.HasPrefix(s, "rv") {
 		return Invalid
@@ -232,7 +250,7 @@ func loadCodecs(filename string) (map[string]*Codec, error) {
 	for sc.Scan() {
 		line := trimComments(sc.Text())
 		fields := strings.Fields(line)
-		if len(fields) != 4 {
+		if len(fields) < 2 {
 			continue
 		}
 		name := fields[0]
@@ -250,7 +268,7 @@ func loadCodecs(filename string) (map[string]*Codec, error) {
 	return ret, sc.Err()
 }
 
-func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[string]*Codec, fullNames map[string]string, descs map[string]string) ([]Operation, error) {
+func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[string]*Codec, fullNames map[string]string, descs map[string]string, pseudocode map[string]string) ([]Operation, error) {
 	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -271,6 +289,7 @@ func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[s
 		op := Operation{
 			FullName:    fullNames[name],
 			Description: descs[name],
+			Pseudocode:  pseudocode[name],
 			Name:        name,
 			FuncName:    makeIdentUnderscores(name),
 			TypeName:    makeIdentTitle(name),
@@ -307,6 +326,15 @@ func loadOperations(filename string, majors map[bits8]*MajorOpcode, codecs map[s
 		// invalid, so we'll just skip it.
 		if op.Codec == nil {
 			continue
+		}
+
+		// If it's a standard-length instruction (as opposed to compressed
+		// or extended length) then we'll find the major opcode it belongs
+		// to, which an instruction decoder can use to partition the coding
+		// space rather than scanning over all of the operations every time.
+		if (op.Mask & 0b1111111) == 0b1111111 {
+			majorOpcode := bits8(op.Test & 0b1111111)
+			op.MajorOpcode = majors[majorOpcode]
 		}
 
 		// Any remaining fields should be standards identifiers indicating
@@ -354,8 +382,6 @@ func loadOpcodeStrings(filename string) (map[string]string, error) {
 		ret[mnem] = strings.TrimSpace(str)
 	}
 
-	spew.Dump(ret)
-
 	return ret, sc.Err()
 }
 
@@ -374,9 +400,13 @@ func loadISAMeta() (*ISA, error) {
 	}
 	opDescs, err := loadOpcodeStrings("opcode-descriptions")
 	if err != nil {
-		return nil, fmt.Errorf("failed to load operation full names: %s", err)
+		return nil, fmt.Errorf("failed to load operation descriptions: %s", err)
 	}
-	ops, err := loadOperations("opcodes", majorOpcodes, codecs, opFullNames, opDescs)
+	opPseudocode, err := loadOpcodeStrings("opcode-pseudocode-alt")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load operation pseudocode: %s", err)
+	}
+	ops, err := loadOperations("opcodes", majorOpcodes, codecs, opFullNames, opDescs, opPseudocode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load minor opcodes: %s", err)
 	}
