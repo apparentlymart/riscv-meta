@@ -37,7 +37,7 @@ func generateRustOpcode(filename string, ops map[bits8]*MajorOpcode) error {
 	w.WriteString("/// Enumeration of top-level opcodes for full-length operations.\n")
 	w.WriteString("pub enum Opcode: u8 {\n")
 	for _, op := range opsList {
-		fmt.Fprintf(w, "    %s = 0b%07b;\n", op.TypeName, op.Num)
+		fmt.Fprintf(w, "    %s = 0b%07b,\n", op.TypeName, op.Num)
 	}
 	w.WriteString("}\n")
 
