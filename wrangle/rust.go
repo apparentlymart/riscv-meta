@@ -73,7 +73,7 @@ func generateRustRawInstruction(filename string, args map[string]*Argument) erro
 	for _, name := range argNames {
 		arg := args[name]
 		resultTy := rustTypeForArgType(arg.Type, arg.EncWidth)
-		fmt.Fprintf(w, "    pub fn %s(self) -> %s {\n", arg.FuncName, resultTy)
+		fmt.Fprintf(w, "    pub fn %s(&self) -> %s {\n", arg.FuncName, resultTy)
 		if resultTy == "i32" {
 			fmt.Fprintf(w, "        let width = %d;\n", arg.EncWidth)
 		}
@@ -167,13 +167,17 @@ func generateRustInstruction(filename string, isa *ISA) error {
 
 		fmt.Fprintf(w, "impl OperationRV%d {\n", int(isaSize))
 		w.WriteString("    fn decode_raw(raw: RawInstruction) -> Self {\n")
-		w.WriteString("        match raw.opcode() {\n")
-		for _, majorOp := range opsList {
+		w.WriteString("        let opcode = raw.opcode();\n")
+		for idx, majorOp := range opsList {
 			switch majorOp {
 			case nil:
-				fmt.Fprintf(w, "            _ => (\n")
+				fmt.Fprintf(w, "        else {\n")
 			default:
-				fmt.Fprintf(w, "            Opcode::%s as u8 => (\n", majorOp.TypeName)
+				if idx == 0 {
+					fmt.Fprintf(w, "        if opcode == (Opcode::%s as u8) {\n", majorOp.TypeName)
+				} else {
+					fmt.Fprintf(w, "        else if opcode == (Opcode::%s as u8) {\n", majorOp.TypeName)
+				}
 			}
 			i := 0
 			for _, op := range isa.Ops {
@@ -184,37 +188,36 @@ func generateRustInstruction(filename string, isa *ISA) error {
 					continue
 				}
 				if i > 0 {
-					w.WriteString("                else if ")
+					w.WriteString("            else if ")
 				} else {
-					w.WriteString("                if ")
+					w.WriteString("            if ")
 				}
 				i++
 				if majorOp == nil && (op.Mask&0xffff0000) == 0 {
 					// Probably a compressed instruction, so we'll use a more intuitive formatting.
-					fmt.Fprintf(w, "raw.match(0b%016b, 0b%016b) {\n", op.Mask, op.Test)
+					fmt.Fprintf(w, "raw.matches(0b%016b, 0b%016b) {\n", op.Mask, op.Test)
 				} else {
-					fmt.Fprintf(w, "raw.match(0b%032b, 0b%032b) {\n", op.Mask, op.Test)
+					fmt.Fprintf(w, "raw.matches(0b%032b, 0b%032b) {\n", op.Mask, op.Test)
 				}
 				if len(op.Codec.Operands) == 0 {
-					fmt.Fprintf(w, "                    Self::%s;\n", op.TypeName)
+					fmt.Fprintf(w, "                Self::%s\n", op.TypeName)
 				} else {
-					fmt.Fprintf(w, "                    Self::%s {\n", op.TypeName)
+					fmt.Fprintf(w, "                Self::%s {\n", op.TypeName)
 					for _, argName := range op.Codec.Operands {
 						arg := isa.Arguments[argName]
-						fmt.Fprintf(w, "                        %s: raw.%s(),\n", arg.FuncLocalName, arg.FuncName)
+						fmt.Fprintf(w, "                    %s: raw.%s(),\n", arg.FuncLocalName, arg.FuncName)
 					}
-					w.WriteString("                    }\n")
+					w.WriteString("                }\n")
 				}
-				w.WriteString("                }\n")
+				w.WriteString("            }\n")
 			}
 			if i == 0 {
-				fmt.Fprintf(w, "                Self::Invalid\n")
+				fmt.Fprintf(w, "            Self::Invalid\n")
 			} else {
-				fmt.Fprintf(w, "                else { Self::Invalid }\n")
+				fmt.Fprintf(w, "            else { Self::Invalid }\n")
 			}
-			w.WriteString("            )\n")
+			w.WriteString("        }\n")
 		}
-		w.WriteString("        }\n")
 		w.WriteString("    }\n")
 		w.WriteString("}\n")
 	}
