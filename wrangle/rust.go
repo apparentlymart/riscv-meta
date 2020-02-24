@@ -127,7 +127,7 @@ func generateRustInstruction(filename string, isa *ISA) error {
 		anyStd := isaSize.Any()
 		w.WriteString("\n")
 		fmt.Fprintf(w, "/// Enumeration of all operations from the RV%d ISA.\n", int(isaSize))
-		fmt.Fprintf(w, "enum OperationRV%d {\n", int(isaSize))
+		fmt.Fprintf(w, "pub enum OperationRV%d {\n", int(isaSize))
 
 		for _, ext := range []Extension{ExtI, ExtM, ExtA, ExtS, ExtF, ExtD, ExtQ, ExtC} {
 			extName := isa.ExtensionNames[ext]
@@ -141,16 +141,16 @@ func generateRustInstruction(filename string, isa *ISA) error {
 				}
 				fmt.Fprintf(w, "    /// %s (RV%d%c)\n", op.FullName, int(isaSize), byte(ext))
 				if len(op.Codec.Operands) == 0 {
-					fmt.Fprintf(w, "    %s;\n", op.TypeName)
+					fmt.Fprintf(w, "    %s,\n", op.TypeName)
 					continue
 				}
 				fmt.Fprintf(w, "    %s {\n", op.TypeName)
 				for _, argName := range op.Codec.Operands {
 					arg := isa.Arguments[argName]
 					rustType := rustTypeForArgType(arg.Type, arg.EncWidth)
-					fmt.Fprintf(w, "        %s: %s;\n", arg.FuncLocalName, rustType)
+					fmt.Fprintf(w, "        %s: %s,\n", arg.FuncLocalName, rustType)
 				}
-				w.WriteString("    }\n")
+				w.WriteString("    },\n")
 			}
 		}
 
