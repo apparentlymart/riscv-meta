@@ -140,3 +140,7 @@ func ParseStandard(s string) Standard {
 func (e Extension) String() string {
 	return string(e)
 }
+
+func (s Size) Any() Standard {
+	return MakeStandard(s, ExtInvalid)
+}
