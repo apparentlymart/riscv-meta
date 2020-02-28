@@ -16,6 +16,7 @@ func generateRustFragments(dir string, isa *ISA) error {
 	err = generateRustOpcode(filepath.Join(dir, "opcode.rs"), isa.MajorOpcodes)
 	err = generateRustRawInstruction(filepath.Join(dir, "raw_instruction.rs"), isa.Arguments)
 	err = generateRustInstruction(filepath.Join(dir, "instruction.rs"), isa)
+	err = generateRustExec(filepath.Join(dir, "exec32.rs"), isa, RV32)
 
 	return nil
 }
@@ -220,6 +221,75 @@ func generateRustInstruction(filename string, isa *ISA) error {
 		}
 		w.WriteString("    }\n")
 		w.WriteString("}\n")
+	}
+
+	return nil
+}
+
+func generateRustExec(filename string, isa *ISA, isaSize Size) error {
+	w, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	w.WriteString("\n")
+	fmt.Fprintf(w, "// The main instruction dispatch logic for RV%d: selects a suitable\n", int(isaSize))
+	fmt.Fprintf(w, "// implementation function based on the specific operation in the instruction.\n")
+	fmt.Fprintf(w, "fn dispatch_instruction<Mem: Bus<u%d>>(\n", int(isaSize))
+	fmt.Fprintf(w, "    inst: Instruction<Op, u%d>,\n", int(isaSize))
+	fmt.Fprintf(w, "    hart: &mut impl Hart<u%d, u%d, f64, Mem>,\n", int(isaSize), int(isaSize))
+	fmt.Fprintf(w, ") {\n")
+	fmt.Fprintf(w, "    match inst.op {\n")
+
+	std := isaSize.Any().Base()
+	for _, op := range isa.Ops {
+		if !op.Standards.Has(std) {
+			continue
+		}
+		if len(op.Codec.Operands) == 0 {
+			fmt.Fprintf(w, "        Op::%s => exec_%s(hart, inst", op.TypeName, op.FuncName)
+		} else {
+			fmt.Fprintf(w, "        Op::%s { ", op.TypeName)
+			for i, name := range op.Codec.Operands {
+				if i > 0 {
+					w.WriteString(", ")
+				}
+				arg := isa.Arguments[name]
+				w.WriteString(arg.FuncLocalName)
+			}
+			fmt.Fprintf(w, " } => exec_%s(hart, inst", op.FuncName)
+		}
+		for _, argName := range op.Codec.Operands {
+			arg := isa.Arguments[argName]
+			w.WriteString(", ")
+			w.WriteString(arg.FuncLocalName)
+		}
+		w.WriteString("),\n")
+	}
+	w.WriteString("        _ => hart.exception(ExceptionCause::IllegalInstruction),\n")
+	w.WriteString("    }\n")
+	w.WriteString("}\n\n")
+
+	for _, op := range isa.Ops {
+		if !op.Standards.Has(std) {
+			continue
+		}
+		w.WriteString("\n")
+		fmt.Fprintf(w, "// %s: %s.\n", op.FullName, op.Description)
+		fmt.Fprintf(w, "//\n")
+		fmt.Fprintf(w, "// > %s\n", op.Pseudocode)
+		fmt.Fprintf(w, "fn exec_%s<Mem: Bus<u%d>>(\n", op.FuncName, int(isaSize))
+		fmt.Fprintf(w, "    hart: &mut impl Hart<u%d, u%d, f64, Mem>,\n", int(isaSize), int(isaSize))
+		fmt.Fprintf(w, "    _inst: Instruction<Op, u%d>,\n", int(isaSize))
+		for _, name := range op.Codec.Operands {
+			arg := isa.Arguments[name]
+			resultTy := rustTypeForArgType(arg.Type, arg.EncWidth)
+			fmt.Fprintf(w, "    %s: %s,\n", arg.FuncLocalName, resultTy)
+		}
+		fmt.Fprintf(w, ") {\n")
+		fmt.Fprintf(w, "    // TODO: Implement\n")
+		fmt.Fprintf(w, "    hart.exception(ExceptionCause::IllegalInstruction);\n")
+		fmt.Fprintf(w, "}\n")
 	}
 
 	return nil
